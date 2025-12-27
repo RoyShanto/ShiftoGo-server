@@ -15,8 +15,29 @@ async function run() {
     console.log("Successfully connected to MongoDB");
 
     const database = client.db('Shiftogo');
+    const usersCollection = database.collection('users');
     const parcelsCollection = database.collection('parcels');
 
+
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+        const email = req.body.email
+        const userExists = await usersCollection.findOne({ email })
+        if (userExists) {
+          return res.status(200).json({ message: "user already exists", inserted: false });
+        }
+        const result = await usersCollection.insertOne(user)
+        res.status(201).json({ message: "user saved", insertedId: result.insertedId });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to save parcel" });
+      }
+    })
+
+    app.get("/users", async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.json(users);
+    })
 
     app.post("/parcels", async (req, res) => {
       try {
@@ -55,12 +76,6 @@ async function run() {
       }
     });
 
-
-    // app.get("/parcels", async (req, res) => {
-    //   const parcels = await parcelsCollection.find().toArray();
-    //   res.json(parcels);
-    //   // res.send(parcels);
-    // });
 
 
   } finally {
