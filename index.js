@@ -14,30 +14,62 @@ async function run() {
     await client.connect();
     console.log("Successfully connected to MongoDB");
 
+    const admin = require("firebase-admin");
+    const serviceAccount = require("./firebase-admin-key.json");
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+
+    const verifyFBToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const token = authHeader.split(" ")[1];
+
+      try {
+        const decodedUser = await admin.auth().verifyIdToken(token);
+        req.user = decodedUser; // email, uid
+        next();
+      } catch (error) {
+        return res.status(401).json({ message: "Invalid token" });
+      }
+    };
+
+
+
     const database = client.db('Shiftogo');
     const usersCollection = database.collection('users');
     const parcelsCollection = database.collection('parcels');
 
-
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
-        const email = req.body.email
-        const userExists = await usersCollection.findOne({ email })
+        const { email } = user;
+        const userExists = await usersCollection.findOne({ email });
         if (userExists) {
-          return res.status(200).json({ message: "user already exists", inserted: false });
+          await usersCollection.updateOne({ email }, { $set: { lastLogin: new Date().toISOString() } });
+          return res.status(200).json({ message: "User already exists, login time updated", inserted: false });
         }
-        const result = await usersCollection.insertOne(user)
-        res.status(201).json({ message: "user saved", insertedId: result.insertedId });
+
+        // ✅ Only runs if user does NOT exist
+        const result = await usersCollection.insertOne(user);
+        res.status(201).json({ message: "User created", inserted: true, insertedId: result.insertedId });
+
       } catch (error) {
-        res.status(500).json({ error: "Failed to save parcel" });
+        console.error(error);
+        res.status(500).json({ error: "Failed to save user" });
       }
-    })
+    });
+
 
     app.get("/users", async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.json(users);
     })
+
 
     app.post("/parcels", async (req, res) => {
       try {
@@ -53,7 +85,11 @@ async function run() {
       }
     });
 
-    app.get("/parcels", async (req, res) => {
+
+
+
+
+    app.get("/parcels", verifyFBToken, async (req, res) => {
       const { email } = req.query;
       const query = email ? { createdBy: email } : {};
       const options = { sort: { createdAt: -1 } }; // 🔽 newest first
