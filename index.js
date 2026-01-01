@@ -43,6 +43,42 @@ async function run() {
     const database = client.db('Shiftogo');
     const usersCollection = database.collection('users');
     const parcelsCollection = database.collection('parcels');
+    const ridersCollection = database.collection('riders');
+
+
+    app.post("/riders", async (req, res) => {
+      try {
+        const rider = req.body
+        const { email } = req.body;
+        const userExists = await ridersCollection.findOne({ email });
+        if (userExists) {
+          return res.status(200).json({ message: "You already a rider", inserted: false });
+        }
+        const result = await ridersCollection.insertOne(rider);
+        res.status(201).json({ message: "Rider created", inserted: true, insertedId: result.insertedId });
+
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Failed to rider registration" });
+      }
+    })
+
+    app.get("/riders", verifyFBToken, async (req, res) => {
+      const riders = await ridersCollection.find().toArray();
+      res.json(riders);
+    })
+
+    app.patch("/riders/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const result = await ridersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+
+      res.send(result);
+    });
 
     app.post("/users", async (req, res) => {
       try {
