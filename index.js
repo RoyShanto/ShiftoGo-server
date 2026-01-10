@@ -68,12 +68,11 @@ async function run() {
       res.json(riders);
     })
 
-    app.patch("/riders/:id/status", async (req, res) => {
+    app.patch("/riders/:id/acceptRider", async (req, res) => {
       const { id } = req.params;
       const { status, email } = req.body;
       const role = "rider";
-      // const role = status === "activate" ? "rider" : "user";
-
+      
       const result = await ridersCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status } }
@@ -82,6 +81,19 @@ async function run() {
       const result2 = await usersCollection.updateOne(
         { email },
         { $set: { role } }
+      );
+      res.send(result, result2);
+    })
+
+    app.patch("/riders/:id/status", async (req, res) => {
+      const { id } = req.params;
+      const { status, email } = req.body;
+
+      // const role = status === "activate" ? "rider" : "user";
+
+      const result = await ridersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
       );
 
       res.send(result);
@@ -106,7 +118,6 @@ async function run() {
         res.status(500).json({ error: "Failed to save user" });
       }
     });
-
 
     app.get("/users", async (req, res) => {
       const users = await usersCollection.find().toArray();
