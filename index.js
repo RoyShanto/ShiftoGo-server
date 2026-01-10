@@ -68,13 +68,20 @@ async function run() {
       res.json(riders);
     })
 
-    app.patch("/riders/:id", async (req, res) => {
+    app.patch("/riders/:id/status", async (req, res) => {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, email } = req.body;
+      const role = "rider";
+      // const role = status === "activate" ? "rider" : "user";
 
       const result = await ridersCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status } }
+      );
+
+      const result2 = await usersCollection.updateOne(
+        { email },
+        { $set: { role } }
       );
 
       res.send(result);
@@ -106,6 +113,27 @@ async function run() {
       res.json(users);
     })
 
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email }, { projection: { role: 1 } });
+      res.send(user || { role: "user" });
+    });
+
+    app.patch("/users/:id", async (req, res) => {
+      const { id } = req.params;
+      const { role } = req.body;
+
+      // if (!["admin", "user"].includes(role)) {
+      //   return res.status(400).send({ message: "Invalid role" });
+      // }
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role } }
+      );
+
+      res.send(result);
+    });
 
     app.post("/parcels", async (req, res) => {
       try {
@@ -120,10 +148,6 @@ async function run() {
         res.status(500).json({ error: "Failed to save parcel" });
       }
     });
-
-
-
-
 
     app.get("/parcels", verifyFBToken, async (req, res) => {
       const { email } = req.query;
