@@ -1,17 +1,34 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const { MongoClient, ObjectId } = require("mongodb");
+const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
 const app = express();
 const PORT = process.env.PORT || 7000;
 
 
+// middleware
+app.use(cors());
+app.use(express.json());
+
+
+const uri = process.env.DB_URL;
+// const client = new MongoClient(uri);
+
+const client = new MongoClient(uri
+  , {
+    serverApi: {
+      version: ServerApiVersion.v1,
+      strict: true,
+      deprecationErrors: true,
+    }
+  }
+);
+
 async function run() {
   try {
-    const uri = process.env.DB_URL;
-    const client = new MongoClient(uri);
 
     await client.connect();
+    await client.db('Shiftogo').command({ ping: 1 })
     console.log("Successfully connected to MongoDB");
 
     const admin = require("firebase-admin");
@@ -28,6 +45,9 @@ async function run() {
       }
 
       const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
       try {
         const decodedUser = await admin.auth().verifyIdToken(token);
@@ -37,6 +57,17 @@ async function run() {
         return res.status(401).json({ message: "Invalid token" });
       }
     };
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.user.email;
+      const query = { email }
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "forbidden access" })
+      }
+      next();
+    }
+
 
 
 
@@ -72,7 +103,7 @@ async function run() {
       const { id } = req.params;
       const { status, email } = req.body;
       const role = "rider";
-      
+
       const result = await ridersCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status } }
@@ -87,15 +118,28 @@ async function run() {
 
     app.patch("/riders/:id/status", async (req, res) => {
       const { id } = req.params;
-      const { status, email } = req.body;
+      const { status, currentStatus, email } = req.body;
+      const updateDoc = {};
+      if (status !== undefined) { updateDoc.status = status; }
+      if (currentStatus !== undefined) { updateDoc.currentStatus = currentStatus; }
 
-      // const role = status === "activate" ? "rider" : "user";
+      if (!Object.keys(updateDoc).length) { return res.status(400).send({ message: "No data to update" }); }
 
       const result = await ridersCollection.updateOne(
         { _id: new ObjectId(id) },
-        { $set: { status } }
+        { $set: updateDoc }
       );
 
+      res.send(result);
+    });
+
+    app.patch("/riders/:email/currentStatus", async (req, res) => {
+      const { email } = req.params;
+      const currentStatus = req.body;
+      const result = await ridersCollection.updateOne(
+        { email: email },
+        { $set: currentStatus }
+      );
       res.send(result);
     });
 
@@ -130,19 +174,14 @@ async function run() {
       res.send(user || { role: "user" });
     });
 
-    app.patch("/users/:id", async (req, res) => {
+    // make admin 
+    app.patch("/users/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const { id } = req.params;
       const { role } = req.body;
-
-      // if (!["admin", "user"].includes(role)) {
-      //   return res.status(400).send({ message: "Invalid role" });
-      // }
-
       const result = await usersCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { role } }
       );
-
       res.send(result);
     });
 
@@ -168,6 +207,37 @@ async function run() {
       res.json(parcels);
     })
 
+    app.patch("/parcels/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const { paymentStatus } = req.body;
+      const result = await parcelsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { paymentStatus } }
+      );
+      res.send(result);
+    });
+
+    app.patch("/parcels/:id/status", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const { parcelInfo } = req.body;
+      // console.log(parcelInfo)
+      const result = await parcelsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: parcelInfo }
+      );
+      res.send(result);
+    });
+
+    app.patch("/parcels/:id/completeDelivery", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const { deliveryStatus, deliveryDate } = req.body;
+      const result = await parcelsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { deliveryStatus, deliveryDate } }
+      );
+      res.send(result);
+    });
+
     app.delete("/parcels/:id", async (req, res) => {
       try {
         const { id } = req.params;
@@ -192,9 +262,7 @@ async function run() {
 run().catch(console.dir);
 
 
-// middleware
-app.use(cors());
-app.use(express.json());
+
 
 // test route
 app.get("/", (req, res) => {
